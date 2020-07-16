@@ -10,6 +10,8 @@ import ctypes
 import csv
 import tkinter as tk
 from tkinter import font
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 print("Modules loaded.")
 
 file = None
@@ -24,19 +26,22 @@ def getEntry(event):
     elif currFunc is "toCSV":
         toCSV(entry.get())
     
-
 def loadFile(filename = None):
     global currFunc
     global file
     currFunc = "loadFile"
 
     if filename is None or filename is "":
+        entry.delete(0, tk.END)
         entry.bind("<Return>", getEntry)
         label1['text'] = label1['text'] + "Please enter the path of the input file in the text box provided then press Enter.\n"
     else:
         label1['text'] = label1['text'] + "Loading file...\n"
-        file = hs.load(filename)
-        label1['text'] = label1['text'] + "File loaded.\n"
+        try:
+            file = hs.load(filename)
+            label1['text'] = label1['text'] + "File loaded.\n"
+        except:
+            label1['text'] = label1['text'] + "Error loading. Please check path and try again.\n"
         entry.delete(0, tk.END)
         entry.unbind("<Return>")
 
@@ -92,7 +97,7 @@ def analysis(values = None):
         label1['text'] = label1['text'] + "Please load a file before starting analysis.\n"
     elif values is None:
         entry.bind("<Return>", getEntry)
-        label1['text'] = label1['text'] + "Please enter the number of rows and columns you would like to analyze and the number of decimal point to which to round values to seperated by spaces. All values are integers\n"
+        label1['text'] = label1['text'] + "Please enter the number of rows and columns you would like to analyze and the number of decimal points to which to round values to, as integers, seperated by spaces. Press Enter when ready.\n"
     else:
         label1['text'] = label1['text'] + "Starting analysis...\n"
         t = values.split(" ")
@@ -153,18 +158,18 @@ def barChart(INTERVAL = 0.01):
         for i in x_pos:
                 counts.append(counter[i]) if i in counter.keys() else counts.append(0)
         ################################################################################################################################
-        plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
         plt.xticks(y_pos, x_pos, fontsize = 5)
         plt.xlabel('Distance from center peek', fontsize = 5)
         plt.ylabel('Counts', fontsize = 5)
         plt.title('Distance Counts', fontsize = 5)
+        plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
 
-        ax = plt.gca()
-        plt.setp(ax.get_xticklabels(), rotation=90)
-        ax.tick_params(axis='x', which='major', labelsize=5)
-        ax.tick_params(axis='y', which='major', labelsize=5)
+        axs = plt.gca()
+        plt.setp(axs.get_xticklabels(), rotation=90)
+        axs.tick_params(axis='x', which='major', labelsize=5)
+        axs.tick_params(axis='y', which='major', labelsize=5)
 
-        [l.set_visible(False) for (i,l) in enumerate(ax.xaxis.get_ticklabels()) if i % 2 != 0] 
+        [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % 2 != 0] 
         # The '2' is the every nth number of labels its shows on the x-axis. So rn is shows every 2nd label. 
 
         plt.gcf().subplots_adjust(bottom = 0.23)
@@ -180,7 +185,7 @@ def barChart(INTERVAL = 0.01):
         backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         r.mainloop()
-
+        
 def heatMap():
     global distances
     if distances is None:
@@ -192,18 +197,12 @@ def heatMap():
         fig, a = plt.subplots(figsize=(6,5.5)) 
         yeet = sns.heatmap(df, cmap=cm.get_cmap("RdYlBu_r"),ax=a)
         fig = yeet.get_figure()
-        fig.savefig("temporary.png")
 
-        r = tk.Tk()
-        c = tk.Canvas(r, height=720, width=1080)
-        c.pack()
-
-        img = tk.PhotoImage(master=c, file='temporary.png')
-        backLabel = tk.Label(r, image=img)
-        backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
-
-        r.mainloop()
-
+        heatMapWindow = tk.Toplevel(root)
+        heatMapWindow.geometry('1280x720')
+        chart_type = FigureCanvasTkAgg(fig, heatMapWindow)
+        chart_type.draw()
+        chart_type.get_tk_widget().pack()
 
 HEIGHT = 900
 WIDTH = 1400
@@ -217,14 +216,14 @@ frame.place(relwidth=1, relheight=1)
 
 # Menu Label
 label = tk.Label(frame, text='Menu', bg='#333333', font=('Times New Roman', 50), fg='#ffffff')
-label.place(relx=0.45, rely=0.05, relwidth=0.1, relheight=0.05)
+label.place(relx=0.40, rely=0.05, relwidth=0.2, relheight=0.05)
 
 # Text Output box
 label1 = tk.Message(frame, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1100)
 label1.place(relx=0.1, rely=0.5, relwidth=0.8, relheight=0.35)
 
 # Entry box
-entry = tk.Entry(frame, font=40)
+entry = tk.Entry(frame, font=('Calibri', 40))
 entry.place(relx=0.1, rely=0.9, relwidth=0.8, relheight=0.05)
 
 # Buttons
