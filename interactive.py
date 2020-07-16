@@ -1,5 +1,6 @@
 print("Loading modules...")
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import pixstem.api as ps
@@ -18,8 +19,11 @@ currFunc = None
 def getEntry(event):
     if currFunc is "loadFile":
         loadFile(entry.get())
-    if currFunc is "analysis":
+    elif currFunc is "analysis":
         analysis(entry.get())
+    elif currFunc is "toCSV":
+        toCSV(entry.get())
+    
 
 def loadFile(filename = None):
     global currFunc
@@ -90,12 +94,11 @@ def analysis(values = None):
         entry.bind("<Return>", getEntry)
         label1['text'] = label1['text'] + "Please enter the number of rows and columns you would like to analyze and the number of decimal point to which to round values to seperated by spaces. All values are integers\n"
     else:
+        label1['text'] = label1['text'] + "Starting analysis...\n"
         t = values.split(" ")
         COL = int(t[1])
         rnd = int(t[2])
         ROW = int(t[0])
-
-        label1['text'] = label1['text'] + "Starting analysis...\n"
 
         shared_array_base = multiprocessing.Array(ctypes.c_double, ROW*COL)
         distances = np.ctypeslib.as_array(shared_array_base.get_obj())
@@ -115,59 +118,91 @@ def analysis(values = None):
         entry.delete(0, tk.END)
         entry.unbind("<Return>")
 
-def toCSV(filename = "outputDistances.csv"):
-    file = open(filename, "w")
-    writer = csv.writer(file)
-    for i in distances:
-        writer.writerow(i)
-    file.close()
+def toCSV(filename = None):
+    global currFunc
+    currFunc = "toCSV"
+    if distances is None:
+        label1['text'] = label1['text'] + "Please analyze a file before saving data.\n"
+    elif filename is None or filename is "":
+        entry.bind("<Return>", getEntry)
+        label1['text'] = label1['text'] + "Please enter the path of the file you want to save to in the text box provided then press Enter.\n"
+    else:
+        file = open(filename, "w")
+        writer = csv.writer(file)
+        for i in distances:
+            writer.writerow(i)
+        file.close()
+        label1['text'] = label1['text'] + "File saved.\n"
+        entry.delete(0, tk.END)
+        entry.unbind("<Return>")
 
 def barChart(INTERVAL = 0.01):
     global distances
-    dist = distances.flatten()
-    x_pos = np.arange(np.min(dist), np.max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
-    x_pos = [round(num, 2) for num in x_pos]
-    y_pos = np.arange(len(x_pos))
-    ################################################################################################################################
-    from collections import Counter
-    counter = Counter(dist)
-    counts = []
-    for i in x_pos:
-            counts.append(counter[i]) if i in counter.keys() else counts.append(0)
-    ################################################################################################################################
-    plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
-    plt.xticks(y_pos, x_pos, fontsize = 5)
-    plt.xlabel('Distance from center peek', fontsize = 5)
-    plt.ylabel('Counts', fontsize = 5)
-    plt.title('Distance Counts', fontsize = 5)
+    if distances is None:
+        label1['text'] = label1['text'] + "Please analyze a file before saving data.\n"
+    else:
+        dist = distances.copy()
+        dist = dist.flatten()
+        x_pos = np.arange(np.min(dist), np.max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
+        x_pos = [round(num, 2) for num in x_pos]
+        y_pos = np.arange(len(x_pos))
+        ################################################################################################################################
+        from collections import Counter
+        counter = Counter(dist)
+        counts = []
+        for i in x_pos:
+                counts.append(counter[i]) if i in counter.keys() else counts.append(0)
+        ################################################################################################################################
+        plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
+        plt.xticks(y_pos, x_pos, fontsize = 5)
+        plt.xlabel('Distance from center peek', fontsize = 5)
+        plt.ylabel('Counts', fontsize = 5)
+        plt.title('Distance Counts', fontsize = 5)
 
-    ax = plt.gca()
-    plt.setp(ax.get_xticklabels(), rotation=90)
-    ax.tick_params(axis='x', which='major', labelsize=5)
-    ax.tick_params(axis='y', which='major', labelsize=5)
+        ax = plt.gca()
+        plt.setp(ax.get_xticklabels(), rotation=90)
+        ax.tick_params(axis='x', which='major', labelsize=5)
+        ax.tick_params(axis='y', which='major', labelsize=5)
 
-    [l.set_visible(False) for (i,l) in enumerate(ax.xaxis.get_ticklabels()) if i % 60 != 0] 
-    # The '2' is the every nth number of labels its shows on the x-axis. So rn is shows every 2nd label. 
+        [l.set_visible(False) for (i,l) in enumerate(ax.xaxis.get_ticklabels()) if i % 2 != 0] 
+        # The '2' is the every nth number of labels its shows on the x-axis. So rn is shows every 2nd label. 
 
-    plt.gcf().subplots_adjust(bottom = 0.23)
-    plt.rcParams["figure.dpi"] = 500
-    #plt.savefig("300x500BarChart.png")
-    plt.show()
+        plt.gcf().subplots_adjust(bottom = 0.23)
+        plt.rcParams["figure.dpi"] = 100
+        plt.savefig("temporary.png")
+        
+        r = tk.Tk()
+        c = tk.Canvas(r, height=720, width=1080)
+        c.pack()
+
+        img = tk.PhotoImage(master=c, file='temporary.png')
+        backLabel = tk.Label(r, image=img)
+        backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        r.mainloop()
 
 def heatMap():
     global distances
-    import seaborn as sns
-    dist = np.fliplr(distances)
-    med = np.median(dist)
-    for r in range(len(dist)):
-        for c in range(len(dist[r])):
-            if dist[r][c] > 25:
-                dist[r][c] = med
-    # Create data
-    df = pd.DataFrame(dist, columns=np.arange(len(dist[0])), index=np.arange(len(dist)))
-    a = sns.heatmap(df)
-    a.plot()
-    #a = sns.heatmap(df, annot=True, fmt=".2f", annot_kws={"size": 5})
+    if distances is None:
+        label1['text'] = label1['text'] + "Please analyze a file before saving data.\n"
+    else:
+        data = distances.copy()
+        df = pd.DataFrame(data, columns=np.arange(len(data[0])), index=np.arange(len(data)))
+        from matplotlib import cm as cm
+        fig, a = plt.subplots(figsize=(6,5.5)) 
+        yeet = sns.heatmap(df, cmap=cm.get_cmap("RdYlBu_r"),ax=a)
+        fig = yeet.get_figure()
+        fig.savefig("temporary.png")
+
+        r = tk.Tk()
+        c = tk.Canvas(r, height=720, width=1080)
+        c.pack()
+
+        img = tk.PhotoImage(master=c, file='temporary.png')
+        backLabel = tk.Label(r, image=img)
+        backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        r.mainloop()
 
 
 HEIGHT = 900
@@ -181,7 +216,7 @@ frame = tk.Frame(root, bg='#333333')
 frame.place(relwidth=1, relheight=1)
 
 # Menu Label
-label = tk.Label(frame, text='Menu', bg='#333333', font=('Calibri', 50), fg='#ffffff')
+label = tk.Label(frame, text='Menu', bg='#333333', font=('Times New Roman', 50), fg='#ffffff')
 label.place(relx=0.45, rely=0.05, relwidth=0.1, relheight=0.05)
 
 # Text Output box
@@ -199,13 +234,13 @@ button.place(relx=0.42, rely=0.15, relwidth=0.16, relheight=0.05)
 button1 = tk.Button(frame, text='Start Analysis', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: analysis(), pady=0.02, fg='#ffffff')
 button1.place(relx=0.39, rely=0.22, relwidth=0.22, relheight=0.05)
 
-button2 = tk.Button(frame, text='Create Bar Chart', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', pady=0.02, fg='#ffffff')
+button2 = tk.Button(frame, text='Create Bar Chart', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: barChart(), pady=0.02, fg='#ffffff')
 button2.place(relx=0.375, rely=0.29, relwidth=0.25, relheight=0.05)
 
-button3 = tk.Button(frame, text='Create Heat Map', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', pady=0.02, fg='#ffffff')
+button3 = tk.Button(frame, text='Create Heat Map', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: heatMap(), pady=0.02, fg='#ffffff')
 button3.place(relx=0.38, rely=0.36, relwidth=0.24, relheight=0.05)
 
-button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', pady=0.02, fg='#ffffff')
+button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: toCSV(), pady=0.02, fg='#ffffff')
 button4.place(relx=0.34, rely=0.43, relwidth=0.32, relheight=0.05)
 
 root.mainloop()
