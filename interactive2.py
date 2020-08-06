@@ -109,12 +109,13 @@ def startAnalysis(values = None):
             pointxy = (int(event.x * 144 / 400), int(event.y * 144 / 400)) # get the mouse position from event
             l['text'] = l['text'] + str(pointxy[0]) + " " + str(pointxy[1]) + "\n"
             l['text'] = l['text'] + "Starting analysis...\n"
+            r.update()
             analysis(pointxy, values)
-            l['text'] = l['text'] + "Analysis complete.\n"
             e.delete(0, tk.END)
             remove("temp.png")
             c2.unbind('<Button-1>')
             r.destroy()
+            label1['text'] = label1['text'] + "Analysis complete.\n"
 
         s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[0, 0]))
         s.save("temp.png")
@@ -138,7 +139,7 @@ def startAnalysis(values = None):
         c2.create_image(0, 0, anchor='nw', image=img)
         c2.bind('<Button-1>', Mousecoords)
         l['text'] = l['text'] + "Please click on the point you would like to analyze from the diffraction pattern above.\n"
-        root.mainloop()
+        r.mainloop()
         
 def analysis(pointxy, values):
     global file, distances
@@ -238,7 +239,16 @@ def barChart(INTERVAL = 0.01):
         # backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
 
         # r.mainloop()
-        
+
+def outlier(data):
+    data = data.flatten()
+    q1 = np.percentile(data, 25)
+    q3 = np.percentile(data, 75)
+    iqr = q3 - q1
+    min = q1 - (1.5 * iqr)
+    max = q3 + (1.5 * iqr)
+    return min, max
+
 def heatMap():
     global distances
     if file is None:
@@ -248,9 +258,11 @@ def heatMap():
     else:
         data = distances.copy()
         df = pd.DataFrame(data, columns=np.arange(len(data[0])), index=np.arange(len(data)))
+        data2 = distances.copy()
+        min, max = outlier(data2)
         from matplotlib import cm as cm
         fig, a = plt.subplots(figsize=(6,5.5)) 
-        yeet = sns.heatmap(df, cmap=cm.get_cmap("gray"),ax=a)
+        yeet = sns.heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = min, vmax = max)
         fig = yeet.get_figure()
 
         heatMapWindow = tk.Toplevel(root)
