@@ -1,4 +1,6 @@
 print("Loading modules...")
+from os import remove, environ, path
+environ["DISPLAY"] = ":0"
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -9,7 +11,6 @@ import hyperspy.api as hs
 from ctypes import c_double
 import csv
 import concurrent.futures
-from os import remove
 import tkinter as tk
 from PIL import Image, ImageTk
 from tkinter import font
@@ -21,41 +22,59 @@ file = None
 distances = None
 currFunc = None
 
-def getEntry(event):
+def setCurrFunc(funcName):
+    global currFunc, file, distances
+    currFunc = str(funcName)
+    entry.delete(0, tk.END)
     if currFunc is "loadFile":
+        entry.bind("<Return>", getEntry)
+        label1['text'] = label1['text'] + "Please enter the path of the input file in the text box provided then press Enter.\n"
+    elif currFunc is "toCSV":
+        if file is None:
+            label1['text'] = label1['text'] + "Please load a file before saving data.\n"
+        elif distances is None:
+            label1['text'] = label1['text'] + "Please analyze the file before saving data.\n"
+        else:
+            entry.bind("<Return>", getEntry)
+            label1['text'] = label1['text'] + "Please enter the path of the file you want to save to in the text box provided then press Enter.\n"
+    elif currFunc is "analysis":
+        if file is None:
+            label1['text'] = label1['text'] + "Please load a file before starting analysis.\n"
+        else :
+            entry.bind("<Return>", getEntry)
+            label1['text'] = label1['text'] + "Please enter the number of rows and columns you would like to analyze, as integers, seperated by spaces. Press Enter when ready.\n"
+
+def getEntry(event):
+    global currFunc
+    if currFunc is "loadFile":
+        entry.unbind("<Return>")
         loadFile(entry.get())
-    elif currFunc is "startAnalysis":
+    elif currFunc is "analysis":
         entry.unbind("<Return>")
         startAnalysis(entry.get())
     elif currFunc is "toCSV":
+        entry.unbind("<Return>")
         toCSV(entry.get())
     
 def loadFile(filename = None):
-    global currFunc
     global file
-    currFunc = "loadFile"
-
-    if filename is None or filename is "":
-        entry.delete(0, tk.END)
-        entry.bind("<Return>", getEntry)
-        label1['text'] = label1['text'] + "Please enter the path of the input file in the text box provided then press Enter.\n"
-    else:
-        label1['text'] = label1['text'] + "Loading file...\n"
-        try:
-            file = hs.load(filename)
-            label1['text'] = label1['text'] + "File loaded.\n"
-        except:
-            label1['text'] = label1['text'] + "Error loading. Please check path and try again.\n"
-        entry.delete(0, tk.END)
-        entry.unbind("<Return>")
+    label1['text'] = label1['text'] + "Loading file...\n"
+    root.update()
+    try:
+        file = hs.load(filename)
+        label1['text'] = label1['text'] + "File loaded.\n"
+    except:
+        label1['text'] = label1['text'] + "Error loading. Please check path and try again.\n"
+    entry.delete(0, tk.END)
+    #entry.unbind("<Return>")
 
 def distance(x1, y1, x2, y2):
     return np.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
 
-def intensity(i, j, x, y):
-    s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[i, j]))
+def intensity(values):
+    s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[values[0], values[1]]))
     imarray = np.array(s)
-    distances[j][i] = imarray[y][x]
+    distances[values[1]][values[0]] = imarray[values[3]][values[2]]
 
 def findCenter(im, peak):
     center = (0,0)
@@ -98,20 +117,18 @@ def multiprocessing_func(values):
 def startAnalysis(values = None):
     global file, currFunc
     pointxy = None
-    if file is None:
-        label1['text'] = label1['text'] + "Please load a file before starting analysis.\n"
-    elif values is None:
-        currFunc = "startAnalysis"
-        entry.bind("<Return>", getEntry)
-        label1['text'] = label1['text'] + "Please enter the number of rows and columns you would like to analyze, as integers, seperated by spaces. Press Enter when ready.\n"
-    elif pointxy is None:
+    methodOfAnalysis = ""
+    if pointxy is None:
+        def assignMethod(method):
+            global methodOfAnalysis
+            methodOfAnalysis = method
         def Mousecoords(event):
+            global methodOfAnalysis
             pointxy = (int(event.x * 144 / 400), int(event.y * 144 / 400)) # get the mouse position from event
             l['text'] = l['text'] + str(pointxy[0]) + " " + str(pointxy[1]) + "\n"
             l['text'] = l['text'] + "Starting analysis...\n"
             r.update()
-            analysis(pointxy, values)
-            e.delete(0, tk.END)
+            analysis(pointxy, values, methodOfAnalysis)
             remove("temp.png")
             c2.unbind('<Button-1>')
             r.destroy()
@@ -130,18 +147,20 @@ def startAnalysis(values = None):
         f = tk.Frame(r, bg='#333333')
         f.place(relwidth=1, relheight=1)
         l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1100)
-        l.place(relx=0.1, rely=0.6, relwidth=0.8, relheight=0.3)
-        e = tk.Entry(f, font=('Calibri', 15))
-        e.place(relx=0.1, rely=0.9, relwidth=0.8, relheight=0.05)
+        l.place(relx=0.05, rely=0.7, relwidth=0.9, relheight=0.2)
+        b1 = tk.Button(f, text='Intensity Mapping', bg='#404040', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
+        b1.place(relx=0.2, rely=0.6, relwidth=0.2, relheight=0.05)
+        b2 = tk.Button(f, text='Strain Mapping', bg='#404040', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: assignMethod("strain"), pady=0.02, fg='#ffffff')
+        b2.place(relx=0.6, rely=0.6, relwidth=0.2, relheight=0.05)
         c2 = tk.Canvas(r, width=400, height=400)
         c2.place(relx=0.3)
         img = ImageTk.PhotoImage(Image.open("temp.png"))
         c2.create_image(0, 0, anchor='nw', image=img)
         c2.bind('<Button-1>', Mousecoords)
-        l['text'] = l['text'] + "Please click on the point you would like to analyze from the diffraction pattern above.\n"
+        l['text'] = l['text'] + "Please click on the method of analysis and then the point you would like to analyze from the diffraction pattern above.\n"
         r.mainloop()
         
-def analysis(pointxy, values):
+def analysis(pointxy, values, methodOfAnalysis):
     global file, distances
     t = values.split(" ")
     COL = int(t[1])
@@ -157,28 +176,22 @@ def analysis(pointxy, values):
     distances = distances.reshape(COL, ROW)
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        executor.map(multiprocessing_func, list)
+        if methodOfAnalysis is "strain":
+            executor.map(multiprocessing_func, list)
+        else:
+            executor.map(intensity, list)
     entry.delete(0, tk.END)
     
 def toCSV(filename = None):
-    global currFunc, file, distances
-    currFunc = "toCSV"
-    if file is None:
-        label1['text'] = label1['text'] + "Please load a file before saving data.\n"
-    elif distances is None:
-        label1['text'] = label1['text'] + "Please analyze the file before saving data.\n"
-    elif filename is None:
-        entry.bind("<Return>", getEntry)
-        label1['text'] = label1['text'] + "Please enter the path of the file you want to save to in the text box provided then press Enter.\n"
-    else:
-        file = open(filename, "w")
-        writer = csv.writer(file)
-        for i in distances:
-            writer.writerow(i)
-        file.close()
-        label1['text'] = label1['text'] + "File saved.\n"
-        entry.delete(0, tk.END)
-        entry.unbind("<Return>")
+    global distances
+    f = open(filename, "w")
+    writer = csv.writer(f)
+    for i in distances:
+        writer.writerow(i)
+    f.close()
+    label1['text'] = label1['text'] + "File saved.\n"
+    entry.delete(0, tk.END)
+    #entry.unbind("<Return>")
 
 def barChart(INTERVAL = 0.01):
 
@@ -191,6 +204,8 @@ def barChart(INTERVAL = 0.01):
     elif distances is None:
         label1['text'] = label1['text'] + "Please analyze the file before creating a bar chart.\n"
     else:
+        label1['text'] = label1['text'] + "Creating bar chart. This might take several minutes depending on the size of data.\n"
+        root.update()
         dist = distances.copy()
         dist = dist.flatten()
         x_pos = np.arange(np.min(dist), np.max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
@@ -296,10 +311,10 @@ if __name__ == "__main__":
     entry.place(relx=0.1, rely=0.9, relwidth=0.8, relheight=0.05)
 
     # Buttons
-    button = tk.Button(frame, text='Load File', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: loadFile(), pady=0.02, fg='#ffffff')
+    button = tk.Button(frame, text='Load File', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("loadFile"), pady=0.02, fg='#ffffff')
     button.place(relx=0.42, rely=0.15, relwidth=0.16, relheight=0.05)
 
-    button1 = tk.Button(frame, text='Start Analysis', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: startAnalysis(), pady=0.02, fg='#ffffff')
+    button1 = tk.Button(frame, text='Start Analysis', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("analysis"), pady=0.02, fg='#ffffff')
     button1.place(relx=0.39, rely=0.22, relwidth=0.22, relheight=0.05)
 
     button2 = tk.Button(frame, text='Create Bar Chart', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: barChart(), pady=0.02, fg='#ffffff')
@@ -308,7 +323,9 @@ if __name__ == "__main__":
     button3 = tk.Button(frame, text='Create Heat Map', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: heatMap(), pady=0.02, fg='#ffffff')
     button3.place(relx=0.38, rely=0.36, relwidth=0.24, relheight=0.05)
 
-    button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: toCSV(), pady=0.02, fg='#ffffff')
+    button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("toCSV"), pady=0.02, fg='#ffffff')
     button4.place(relx=0.34, rely=0.43, relwidth=0.32, relheight=0.05)
 
     root.mainloop()
+    if path.exists("temp.png"):
+        remove("temp.png")
