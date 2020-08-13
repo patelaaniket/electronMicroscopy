@@ -1,21 +1,23 @@
 print("Loading modules...")
 from os import remove, environ, path
-environ["DISPLAY"] = ":0"
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import pandas as pd
-import pixstem.api as ps
-import multiprocessing
-import hyperspy.api as hs
+environ["DISPLAY"] = ":0" # this line may or may not be needed depending on the system
+from concurrent.futures import ProcessPoolExecutor
+from csv import writer
 from ctypes import c_double
-import csv
-import concurrent.futures
-import tkinter as tk
-from PIL import Image, ImageTk
-from tkinter import font
+from hyperspy.api import load
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+from multiprocessing import Array
+from numpy import sqrt, array, ndenumerate, arange, min, max, percentile
+from numpy.ctypeslib import as_array
+from pandas import DataFrame
+from PIL import Image, ImageTk
+from pixstem.api import PixelatedSTEM
+from seaborn import heatmap
+import tkinter as tk
+from tkinter import font
+
 print("Modules loaded.")
 
 file = None
@@ -61,7 +63,7 @@ def loadFile(filename = None):
     label1['text'] = label1['text'] + "Loading file...\n"
     root.update()
     try:
-        file = hs.load(filename)
+        file = load(filename)
         label1['text'] = label1['text'] + "File loaded.\n"
     except:
         label1['text'] = label1['text'] + "Error loading. Please check path and try again.\n"
@@ -69,17 +71,17 @@ def loadFile(filename = None):
     #entry.unbind("<Return>")
 
 def distance(x1, y1, x2, y2):
-    return np.sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
+    return sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2))
 
 def intensity(values):
-    s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[values[0], values[1]]))
-    imarray = np.array(s)
+    s = PixelatedSTEM(file.inav[values[0], values[1]])
+    imarray = array(s)
     distances[values[1]][values[0]] = imarray[values[3]][values[2]]
 
 def findCenter(im, peak):
     center = (0,0)
     maximum = 0
-    for (x,y) in np.ndenumerate(peak):
+    for (x,y) in ndenumerate(peak):
         for (a, b) in y:
             if (int(a) < len(im) and int(b) < len(im) and im[int(a)][int(b)] > maximum):
                 maximum = im[int(a)][int(b)]
@@ -88,8 +90,8 @@ def findCenter(im, peak):
 
 def multiprocessing_func(values):
     global distances
-    s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[values[0], values[1]]))
-    imarray = np.array(s)
+    s = PixelatedSTEM(file.inav[values[0], values[1]])
+    imarray = array(s)
     s = s.rotate_diffraction(0,show_progressbar=False)
     ############################################################################################################################
     st = s.template_match_disk(disk_r=5, lazy_result=False, show_progressbar=False)
@@ -104,12 +106,12 @@ def multiprocessing_func(values):
     posDistance = 0
     closestPoint = center
         
-    for (x,y) in np.ndenumerate(peak_array_rem_com):
-        min = 999999
+    for (x,y) in ndenumerate(peak_array_rem_com):
+        minimum = 999999
         for (a, b) in y:
             dis = distance(values[2], values[3], b, a)
-            if dis < min:
-                min = dis
+            if dis < minimum:
+                minimum = dis
                 closestPoint = (b, a)
     posDistance = distance(closestPoint[0], closestPoint[1], center[0], center[1])
     distances[values[1]][values[0]] = round(posDistance, 2)
@@ -134,7 +136,7 @@ def startAnalysis(values = None):
             r.destroy()
             label1['text'] = label1['text'] + "Analysis complete.\n"
 
-        s = ps.PixelatedSTEM(hs.signals.Signal2D(file.inav[0, 0]))
+        s = PixelatedSTEM(file.inav[0, 0])
         s.save("temp.png")
         img = Image.open("temp.png")
         img = img.resize((400,400), Image.ANTIALIAS)
@@ -171,11 +173,11 @@ def analysis(pointxy, values, methodOfAnalysis):
         for c in range(COL):
             list.append((r, c, pointxy[0], pointxy[1]))
 
-    shared_array_base = multiprocessing.Array(c_double, ROW*COL)
-    distances = np.ctypeslib.as_array(shared_array_base.get_obj())
+    shared_array_base = Array(c_double, ROW*COL)
+    distances = as_array(shared_array_base.get_obj())
     distances = distances.reshape(COL, ROW)
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         if methodOfAnalysis is "strain":
             executor.map(multiprocessing_func, list)
         else:
@@ -185,19 +187,15 @@ def analysis(pointxy, values, methodOfAnalysis):
 def toCSV(filename = None):
     global distances
     f = open(filename, "w")
-    writer = csv.writer(f)
+    w = writer(f)
     for i in distances:
-        writer.writerow(i)
+        w.writerow(i)
     f.close()
     label1['text'] = label1['text'] + "File saved.\n"
     entry.delete(0, tk.END)
     #entry.unbind("<Return>")
 
 def barChart(INTERVAL = 0.01):
-
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    from matplotlib.figure import Figure
-
     global distances
     if file is None:
         label1['text'] = label1['text'] + "Please load a file before creating a bar chart.\n"
@@ -208,9 +206,9 @@ def barChart(INTERVAL = 0.01):
         root.update()
         dist = distances.copy()
         dist = dist.flatten()
-        x_pos = np.arange(np.min(dist), np.max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
+        x_pos = arange(min(dist), max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
         x_pos = [round(num, 2) for num in x_pos]
-        y_pos = np.arange(len(x_pos))
+        y_pos = arange(len(x_pos))
         ################################################################################################################################
         from collections import Counter
         counter = Counter(dist)
@@ -257,12 +255,12 @@ def barChart(INTERVAL = 0.01):
 
 def outlier(data):
     data = data.flatten()
-    q1 = np.percentile(data, 25)
-    q3 = np.percentile(data, 75)
+    q1 = percentile(data, 25)
+    q3 = percentile(data, 75)
     iqr = q3 - q1
-    min = q1 - (1.5 * iqr)
-    max = q3 + (1.5 * iqr)
-    return min, max
+    minimum = q1 - (1.5 * iqr)
+    maximum = q3 + (1.5 * iqr)
+    return minimum, maximum
 
 def heatMap():
     global distances
@@ -272,12 +270,12 @@ def heatMap():
         label1['text'] = label1['text'] + "Please analyze the file before creating a heat map.\n"
     else:
         data = distances.copy()
-        df = pd.DataFrame(data, columns=np.arange(len(data[0])), index=np.arange(len(data)))
+        df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
         data2 = distances.copy()
-        min, max = outlier(data2)
+        minimum, maximum = outlier(data2)
         from matplotlib import cm as cm
         fig, a = plt.subplots(figsize=(6,5.5)) 
-        yeet = sns.heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = min, vmax = max)
+        yeet = heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = minimum, vmax = maximum)
         fig = yeet.get_figure()
 
         heatMapWindow = tk.Toplevel(root)
