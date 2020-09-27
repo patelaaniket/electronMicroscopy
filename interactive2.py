@@ -5,11 +5,15 @@ from concurrent.futures import ProcessPoolExecutor
 from csv import writer
 from ctypes import c_double
 from hyperspy.api import load
+from math import ceil
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib import cm
+from matplotlib import colors
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+from matplotlib.ticker import LinearLocator
 from multiprocessing import Array
-from numpy import sqrt, array, ndenumerate, arange, min, max, percentile
+from numpy import sqrt, array, ndenumerate, arange, min, max, percentile, linspace, nonzero, zeros, around
 from numpy.ctypeslib import as_array
 from pandas import DataFrame
 from PIL import Image, ImageTk
@@ -22,10 +26,11 @@ print("Modules loaded.")
 
 file = None
 distances = None
+singleValues = None
 currFunc = None
 
 def setCurrFunc(funcName):
-    global currFunc, file, distances
+    global currFunc, file, singleValues
     currFunc = str(funcName)
     entry.delete(0, tk.END)
     if currFunc is "loadFile":
@@ -34,7 +39,7 @@ def setCurrFunc(funcName):
     elif currFunc is "toCSV":
         if file is None:
             label1['text'] = label1['text'] + "Please load a file before saving data.\n"
-        elif distances is None:
+        elif singleValues is None:
             label1['text'] = label1['text'] + "Please analyze the file before saving data.\n"
         else:
             entry.bind("<Return>", getEntry)
@@ -76,7 +81,7 @@ def distance(x1, y1, x2, y2):
 def intensity(values):
     s = PixelatedSTEM(file.inav[values[0], values[1]])
     imarray = array(s)
-    distances[values[1]][values[0]] = imarray[values[3]][values[2]]
+    singleValues[values[1]][values[0]] = imarray[values[3]][values[2]]
 
 def findCenter(im, peak):
     center = (0,0)
@@ -89,7 +94,7 @@ def findCenter(im, peak):
     return center
 
 def multiprocessing_func(values):
-    global distances
+    global singleValues, distances
     s = PixelatedSTEM(file.inav[values[0], values[1]])
     imarray = array(s)
     s = s.rotate_diffraction(0,show_progressbar=False)
@@ -105,16 +110,20 @@ def multiprocessing_func(values):
     # finds the specific spot and adding that distance to the array
     posDistance = 0
     closestPoint = center
-        
+    idx = 0
     for (x,y) in ndenumerate(peak_array_rem_com):
         minimum = 999999
         for (a, b) in y:
+            if (2 < b < 142 and 2 < a < 142):
+                di = distance(center[0], center[1], b, a)
+                distances[values[1]][values[0]][idx] = round(di, 3)
+                idx += 1
             dis = distance(values[2], values[3], b, a)
             if dis < minimum:
                 minimum = dis
                 closestPoint = (b, a)
     posDistance = distance(closestPoint[0], closestPoint[1], center[0], center[1])
-    distances[values[1]][values[0]] = round(posDistance, 2)
+    singleValues[values[1]][values[0]] = round(posDistance, 2)
 
 def startAnalysis(values = None):
     global file, currFunc
@@ -148,7 +157,7 @@ def startAnalysis(values = None):
         c.pack()
         f = tk.Frame(r, bg='#333333')
         f.place(relwidth=1, relheight=1)
-        l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1100)
+        l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1000)
         l.place(relx=0.05, rely=0.7, relwidth=0.9, relheight=0.2)
         b1 = tk.Button(f, text='Intensity Mapping', bg='#404040', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
         b1.place(relx=0.2, rely=0.6, relwidth=0.2, relheight=0.05)
@@ -163,7 +172,7 @@ def startAnalysis(values = None):
         r.mainloop()
         
 def analysis(pointxy, values, methodOfAnalysis):
-    global file, distances
+    global file, singleValues, distances
     t = values.split(" ")
     COL = int(t[1])
     ROW = int(t[0])
@@ -174,8 +183,12 @@ def analysis(pointxy, values, methodOfAnalysis):
             list.append((r, c, pointxy[0], pointxy[1]))
 
     shared_array_base = Array(c_double, ROW*COL)
-    distances = as_array(shared_array_base.get_obj())
-    distances = distances.reshape(COL, ROW)
+    singleValues = as_array(shared_array_base.get_obj())
+    singleValues = singleValues.reshape(COL, ROW)
+
+    shared_array = Array(c_double, ROW*COL*20)
+    distances = as_array(shared_array.get_obj())
+    distances = distances.reshape(COL, ROW, 20)
 
     with ProcessPoolExecutor() as executor:
         if methodOfAnalysis is "strain":
@@ -185,17 +198,50 @@ def analysis(pointxy, values, methodOfAnalysis):
     entry.delete(0, tk.END)
     
 def toCSV(filename = None):
-    global distances
+    global singleValues
     f = open(filename, "w")
     w = writer(f)
-    for i in distances:
+    for i in singleValues:
         w.writerow(i)
     f.close()
     label1['text'] = label1['text'] + "File saved.\n"
     entry.delete(0, tk.END)
     #entry.unbind("<Return>")
 
-def barChart(INTERVAL = 0.01):
+def heatMapMaker(minimum, maximum, parity = 0):
+    global singleValues, distances
+    
+    if parity == 0:
+        data = singleValues.copy()
+        df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
+        _, a = plt.subplots(figsize=(6,5.5))
+        chart1 = heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = minimum, vmax = maximum, square=True)
+        return chart1.get_figure()
+    else:
+        data = zeros((len(singleValues), len(singleValues[0])), dtype=float)
+        for i in range(len(distances)):
+            for j in range(len(distances[i])):
+                sum = 0
+                num = 0
+                for k in distances[i][j]:
+                    if minimum < k < maximum:
+                        sum += k
+                        num += 1
+                if num > 0:
+                    data[i][j] = round(sum / num, 1)
+
+        df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
+        _, a = plt.subplots(figsize=(6,5.5))
+        gray = cm.get_cmap('gray', 512)
+        newcolors = gray(linspace(0.15, 0.85, 2048))
+        white = array([255/256, 255/256, 255/256, 1])
+        newcolors[:1, :] = white
+        newcolors[2047:, :] = white
+        newcmp = colors.ListedColormap(newcolors)
+        chart = heatmap(df, cmap=newcmp, vmin = minimum, vmax = maximum, square=True)
+        return chart.get_figure()
+
+def barChart(INTERVAL = 0.1):
     global distances
     if file is None:
         label1['text'] = label1['text'] + "Please load a file before creating a bar chart.\n"
@@ -205,53 +251,55 @@ def barChart(INTERVAL = 0.01):
         label1['text'] = label1['text'] + "Creating bar chart. This might take several minutes depending on the size of data.\n"
         root.update()
         dist = distances.copy()
-        dist = dist.flatten()
-        x_pos = arange(min(dist), max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
-        x_pos = [round(num, 2) for num in x_pos]
+        dist = around(dist.flatten(), 1)
+        x_pos = arange(min(dist[nonzero(dist)]), max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
+        x_pos = [round(num, 1) for num in x_pos]
         y_pos = arange(len(x_pos))
         ################################################################################################################################
         from collections import Counter
         counter = Counter(dist)
         counts = []
         for i in x_pos:
-                counts.append(counter[i]) if i in counter.keys() else counts.append(0)
+            counts.append(counter[i]) if i in counter.keys() else counts.append(0)
         ################################################################################################################################
-        plt.xticks(y_pos, x_pos, fontsize = 5)
-        plt.xlabel('Distance from center peek', fontsize = 5)
-        plt.ylabel('Counts', fontsize = 5)
-        plt.title('Distance Counts', fontsize = 5)
+        fig, a = plt.subplots(figsize=(6,5.5))
+        plt.xticks(y_pos, x_pos, fontsize = 8)
+        plt.xlabel('Distance from center peek', fontsize = 10)
+        plt.ylabel('Counts', fontsize = 10)
+        plt.title('Distance Counts', fontsize = 10)
         plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
 
         axs = plt.gca()
         plt.setp(axs.get_xticklabels(), rotation=90)
-        axs.tick_params(axis='x', which='major', labelsize=5)
-        axs.tick_params(axis='y', which='major', labelsize=5)
-
-        [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % 2 != 0] 
-        # The '2' is the every nth number of labels its shows on the x-axis. So rn is shows every 2nd label. 
+        axs.tick_params(axis='x', which='major', labelsize=10)
+        axs.tick_params(axis='y', which='major', labelsize=10)
+        #[l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % (ceil((len(distances[0]) * len(distances) * 20) / 100) * 2) != 0]
+        if len(axs.xaxis.get_ticklabels()) > 40:
+            [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % (len(distances[0]) * len(distances) * 20 / 40) != 0]
 
         plt.gcf().subplots_adjust(bottom = 0.23)
         plt.rcParams["figure.dpi"] = 100
-        #plt.savefig("temporary.png")
+
+        def scopeHeatMap(event):
+            values = e.get().split(" ")
+            minimum = float(values[0])
+            maximum = float(values[1])
+            f = heatMapMaker(minimum, maximum, 1)
+            chart_type = FigureCanvasTkAgg(f, barChartWindow)
+            chart_type.draw()
+            chart_type.get_tk_widget().place(relx=0.51, rely=0.2)
         
         barChartWindow = tk.Toplevel(root)
-        barChartWindow.geometry('1280x720')
-        figure = Figure(figsize=(11,11),dpi = 100)
-        a = figure.add_subplot(111)
-        a.bar(y_pos,counts)
-        chart_type = FigureCanvasTkAgg(figure, barChartWindow)
+        barChartWindow.geometry('1920x1080')
+        chart_type = FigureCanvasTkAgg(plt.gcf(), barChartWindow)
         chart_type.draw()
-        chart_type.get_tk_widget().place(relx=0.1, rely=0.1, relwidth=0.8, relheight=0.8)
-
-        # r = tk.Tk()
-        # c = tk.Canvas(r, height=720, width=1080)
-        # c.pack()
-
-        # img = tk.PhotoImage(master=c, file='temporary.png')
-        # backLabel = tk.Label(r, image=img)
-        # backLabel.place(relx=0, rely=0, relwidth=1, relheight=1)
-
-        # r.mainloop()
+        chart_type.get_tk_widget().place(relx=0.0, rely=0.2, relwidth=0.5)
+        m = tk.Message(barChartWindow, font=('Calibri', 15), highlightthickness = 0, bd=0, width=1000, justify='center')
+        m['text'] = "Enter the minimum value and the maximum value (exclusive) seperated by a space. Press Enter to create the heatmap with these specifications"
+        m.place(relx = 0.25, rely=0.05)
+        e = tk.Entry(barChartWindow, font=('Calibri', 15))
+        e.place(relx=0.44, rely=0.1)
+        e.bind("<Return>", scopeHeatMap)
 
 def outlier(data):
     data = data.flatten()
@@ -263,21 +311,14 @@ def outlier(data):
     return minimum, maximum
 
 def heatMap():
-    global distances
+    global singleValues
     if file is None:
         label1['text'] = label1['text'] + "Please load a file before creating a heat map.\n"
-    elif distances is None:
+    elif singleValues is None:
         label1['text'] = label1['text'] + "Please analyze the file before creating a heat map.\n"
     else:
-        data = distances.copy()
-        df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
-        data2 = distances.copy()
-        minimum, maximum = outlier(data2)
-        from matplotlib import cm as cm
-        fig, a = plt.subplots(figsize=(6,5.5)) 
-        yeet = heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = minimum, vmax = maximum)
-        fig = yeet.get_figure()
-
+        minimum, maximum = outlier(singleValues)
+        fig = heatMapMaker(minimum, maximum, 0)
         heatMapWindow = tk.Toplevel(root)
         heatMapWindow.geometry('1280x720')
         chart_type = FigureCanvasTkAgg(fig, heatMapWindow)
