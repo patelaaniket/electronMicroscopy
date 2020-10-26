@@ -85,11 +85,12 @@ def intensity(values):
 
 def findCenter(im, peak):
     center = (0,0)
-    maximum = 0
+    minimum = 144
     for (x,y) in ndenumerate(peak):
         for (a, b) in y:
-            if (int(a) < len(im) and int(b) < len(im) and im[int(a)][int(b)] > maximum):
-                maximum = im[int(a)][int(b)]
+            d = distance(72, 72, b, a)
+            if (int(a) < len(im) and int(b) < len(im) and d < minimum):
+                minimum = d
                 center = (b, a)
     return center
 
@@ -170,8 +171,10 @@ def startAnalysis(values = None):
         c2.bind('<Button-1>', Mousecoords)
         l['text'] = l['text'] + "Please click on the method of analysis and then the point you would like to analyze from the diffraction pattern above.\n"
         r.mainloop()
+        if path.exists("temp.png"):
+            remove("temp.png")
         
-def analysis(pointxy, values, methodOfAnalysis):
+def analysis(pointxy, values, methodOfAnalysis=""):
     global file, singleValues, distances
     t = values.split(" ")
     COL = int(t[1])
@@ -186,9 +189,9 @@ def analysis(pointxy, values, methodOfAnalysis):
     singleValues = as_array(shared_array_base.get_obj())
     singleValues = singleValues.reshape(COL, ROW)
 
-    shared_array = Array(c_double, ROW*COL*20)
+    shared_array = Array(c_double, ROW*COL*50)
     distances = as_array(shared_array.get_obj())
-    distances = distances.reshape(COL, ROW, 20)
+    distances = distances.reshape(COL, ROW, 50)
 
     with ProcessPoolExecutor() as executor:
         if methodOfAnalysis is "strain":
