@@ -1,7 +1,8 @@
 print("Loading modules...")
+
 from os import remove, environ, path
 
-environ["DISPLAY"] = ":0"  # this line may or may not be needed depending on the system
+#environ["DISPLAY"] = ":0"  # this line may or may not be needed depending on the system
 from concurrent.futures import ProcessPoolExecutor
 from csv import writer
 from ctypes import c_double
@@ -31,7 +32,7 @@ file = None
 distances = None
 singleValues = None
 currFunc = None
-
+Usethisarray = []
 
 def setCurrFunc(funcName):
     global currFunc, file, singleValues
@@ -194,11 +195,10 @@ def startAnalysis(values=None):
 
 
 def analysis(pointxy, values, methodOfAnalysis):
-    global file, singleValues, distances
+    global file, singleValues, distances, Usethisarray
     t = values.split(" ")
     COL = int(t[1])
     ROW = int(t[0])
-
     list = []
     for r in range(ROW):
         for c in range(COL):
@@ -349,8 +349,11 @@ def heatMap():
     elif distances is None:
         label1['text'] = label1['text'] + "Please analyze the file before creating a heat map.\n"
     else:
-        print(distances)
-        fig = px.imshow(singleValues, color_continuous_scale=["blue", "white", "red"])
+        data = singleValues.copy()
+        df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
+        print(df)
+        print(singleValues)
+        fig = px.imshow(df, color_continuous_scale=["blue", "white", "red"])
         fig.show()
 
         def imagegallery(event):
