@@ -1,6 +1,7 @@
 print("Loading modules...")
 from os import remove, environ, path
-environ["DISPLAY"] = ":0" # this line may or may not be needed depending on the system
+#print(environ["DISPLAY"])
+environ["DISPLAY"] = ":1" # this line may or may not be needed depending on the system
 from concurrent.futures import ProcessPoolExecutor
 from csv import writer
 from ctypes import c_double
@@ -13,7 +14,7 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.ticker import LinearLocator
 from multiprocessing import Array
-from numpy import sqrt, array, ndenumerate, arange, min, max, percentile, linspace, nonzero, zeros, around
+from numpy import sqrt, array, ndenumerate, arange, min, max, percentile, linspace, nonzero, zeros, around, unravel_index, argmax, mean
 from numpy.ctypeslib import as_array
 from pandas import DataFrame
 from PIL import Image, ImageTk
@@ -21,6 +22,11 @@ from pixstem.api import PixelatedSTEM
 from seaborn import heatmap
 import tkinter as tk
 from tkinter import font
+
+from scipy.signal.signaltools import wiener
+from skimage.feature import match_template
+from scipy.ndimage import gaussian_filter
+from skimage.restoration import denoise_nl_means, estimate_sigma
 
 print("Modules loaded.")
 
@@ -83,13 +89,44 @@ def intensity(values):
     imarray = array(s)
     singleValues[values[1]][values[0]] = imarray[values[3]][values[2]]
 
+def duplicates(list, result):
+    i = 0
+    l = []
+    while i < len(list):
+        j = 0
+        temp = []
+        point = list[i]
+        while j < len(list):
+            if distance(point[0], point[1], list[j][0], list[j][1]) < 15:# change minimum center distance
+                temp.append(list[j])
+                list.pop(j)
+            else:
+                j = j + 1
+        max = 0
+        pnt = temp[0]
+        for j in range(len(temp)):
+            if (result[pnt[0]][pnt[1]] < result[temp[j][0]][temp[j][1]]):
+                max = result[temp[j][0]][temp[j][1]]
+                pnt = temp[j]
+        l.append(pnt)
+    return l
+
+def correlation(result):
+    l = []
+    for i in range(len(result)):
+        for j in range(len(result[i])):
+            if (result[i][j] > 0.87):#change correlation value
+                l.append((i, j))
+    return l
+
 def findCenter(im, peak):
     center = (0,0)
     minimum = 144
     for (x,y) in ndenumerate(peak):
         for (a, b) in y:
-            d = distance(72, 72, b, a)
-            if (int(a) < len(im) and int(b) < len(im) and d < minimum):
+            length = len(im)
+            d = distance(length / 2, length / 2, b, a)
+            if (int(a) < length and int(b) < length and d < minimum):
                 minimum = d
                 center = (b, a)
     return center
@@ -97,7 +134,17 @@ def findCenter(im, peak):
 def multiprocessing_func(values):
     global singleValues, distances
     s = PixelatedSTEM(file.inav[values[0], values[1]])
-    imarray = array(s)
+    original = array(s)
+
+    sigma_est = mean(estimate_sigma(original, ))
+    # patch_size for 580 - 1, patch_size for 144 = 3
+    nlm = denoise_nl_means(original, h=1.15*sigma_est, fast_mode=True, patch_size=3, patch_distance=6, )
+    gaussian = gaussian_filter(original, 1.15*sigma_est)
+    wien = wiener(original, 5, 3)
+
+    original = nlm # Change this to whatever filter you want to use
+
+    # PIXSTEM
     s = s.rotate_diffraction(0,show_progressbar=False)
     ############################################################################################################################
     st = s.template_match_disk(disk_r=5, lazy_result=False, show_progressbar=False)
@@ -106,16 +153,18 @@ def multiprocessing_func(values):
     s_rem = s.subtract_diffraction_background(lazy_result=False, show_progressbar=False)
     peak_array_rem_com = s_rem.peak_position_refinement_com(peak_array_com, lazy_result=False, show_progressbar=False)
     ############################################################################################################################
-    center = findCenter(imarray, peak_array_rem_com)
+    center = findCenter(original, peak_array_rem_com)
+
 
     # finds the specific spot and adding that distance to the array
     posDistance = 0
     closestPoint = center
     idx = 0
+    length = len(original)
     for (x,y) in ndenumerate(peak_array_rem_com):
         minimum = 999999
         for (a, b) in y:
-            if (2 < b < 142 and 2 < a < 142):
+            if (2 < b < length - 2 and 2 < a < length - 2):
                 di = distance(center[0], center[1], b, a)
                 distances[values[1]][values[0]][idx] = round(di, 3)
                 idx += 1
@@ -160,9 +209,9 @@ def startAnalysis(values = None):
         f.place(relwidth=1, relheight=1)
         l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1000)
         l.place(relx=0.05, rely=0.7, relwidth=0.9, relheight=0.2)
-        b1 = tk.Button(f, text='Intensity Mapping', bg='#404040', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
+        b1 = tk.Button(f, text='Intensity Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
         b1.place(relx=0.2, rely=0.6, relwidth=0.2, relheight=0.05)
-        b2 = tk.Button(f, text='Strain Mapping', bg='#404040', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: assignMethod("strain"), pady=0.02, fg='#ffffff')
+        b2 = tk.Button(f, text='Strain Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("strain"), pady=0.02, fg='#ffffff')
         b2.place(relx=0.6, rely=0.6, relwidth=0.2, relheight=0.05)
         c2 = tk.Canvas(r, width=400, height=400)
         c2.place(relx=0.3)
@@ -278,7 +327,7 @@ def barChart(INTERVAL = 0.1):
         axs.tick_params(axis='y', which='major', labelsize=10)
         #[l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % (ceil((len(distances[0]) * len(distances) * 20) / 100) * 2) != 0]
         if len(axs.xaxis.get_ticklabels()) > 40:
-            [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % (len(distances[0]) * len(distances) * 20 / 40) != 0]
+            [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % int(len(distances[0]) * len(distances) * 20 / 40) != 0]
 
         plt.gcf().subplots_adjust(bottom = 0.23)
         plt.rcParams["figure.dpi"] = 100
@@ -337,15 +386,15 @@ if __name__ == "__main__":
 
     canvas = tk.Canvas(root, height=HEIGHT, width=WIDTH)
     canvas.pack()
-    frame = tk.Frame(root, bg='#333333')
+    frame = tk.Frame(root, bg='#450000')
     frame.place(relwidth=1, relheight=1)
 
     # Menu Label
-    label = tk.Label(frame, text='Menu', bg='#333333', font=('Times New Roman', 50), fg='#ffffff')
+    label = tk.Label(frame, text='Menu', bg='#450000', font=('Times New Roman', 50), fg='#ffffff')
     label.place(relx=0.40, rely=0.05, relwidth=0.2, relheight=0.05)
 
     # Text Output box
-    label1 = tk.Message(frame, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1500)
+    label1 = tk.Message(frame, bg='#ffffff', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1500)
     label1.place(relx=0.1, rely=0.5, relwidth=0.8, relheight=0.35)
 
     # Entry box
@@ -353,19 +402,19 @@ if __name__ == "__main__":
     entry.place(relx=0.1, rely=0.9, relwidth=0.8, relheight=0.05)
 
     # Buttons
-    button = tk.Button(frame, text='Load File', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("loadFile"), pady=0.02, fg='#ffffff')
+    button = tk.Button(frame, text='Load File', bg='#620000', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: setCurrFunc("loadFile"), pady=0.02, fg='#ffffff')
     button.place(relx=0.42, rely=0.15, relwidth=0.16, relheight=0.05)
 
-    button1 = tk.Button(frame, text='Start Analysis', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("analysis"), pady=0.02, fg='#ffffff')
+    button1 = tk.Button(frame, text='Start Analysis', bg='#620000', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: setCurrFunc("analysis"), pady=0.02, fg='#ffffff')
     button1.place(relx=0.39, rely=0.22, relwidth=0.22, relheight=0.05)
 
-    button2 = tk.Button(frame, text='Create Bar Chart', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: barChart(), pady=0.02, fg='#ffffff')
+    button2 = tk.Button(frame, text='Create Bar Chart', bg='#620000', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: barChart(), pady=0.02, fg='#ffffff')
     button2.place(relx=0.375, rely=0.29, relwidth=0.25, relheight=0.05)
 
-    button3 = tk.Button(frame, text='Create Heat Map', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: heatMap(), pady=0.02, fg='#ffffff')
+    button3 = tk.Button(frame, text='Create Heat Map', bg='#620000', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: heatMap(), pady=0.02, fg='#ffffff')
     button3.place(relx=0.38, rely=0.36, relwidth=0.24, relheight=0.05)
 
-    button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#404040', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#666666', activeforeground='#ffffff', command=lambda: setCurrFunc("toCSV"), pady=0.02, fg='#ffffff')
+    button4 = tk.Button(frame, text='Transfer Data to .csv', bg='#620000', font=('Calibri', 30), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: setCurrFunc("toCSV"), pady=0.02, fg='#ffffff')
     button4.place(relx=0.34, rely=0.43, relwidth=0.32, relheight=0.05)
 
     root.mainloop()

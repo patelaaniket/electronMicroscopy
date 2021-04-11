@@ -2,7 +2,7 @@ print("Loading modules...")
 
 from os import remove, environ, path
 
-#environ["DISPLAY"] = ":0"  # this line may or may not be needed depending on the system
+environ["DISPLAY"] = ":1"  # this line may or may not be needed depending on the system
 from concurrent.futures import ProcessPoolExecutor
 from csv import writer
 from ctypes import c_double
