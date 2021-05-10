@@ -169,7 +169,7 @@ def multiprocessing_func(values):
                 distances[values[1]][values[0]][idx] = round(di, 3)
                 idx += 1
             dis = distance(values[2], values[3], b, a)
-            if dis < minimum:
+            if dis < minimum and dis < length / 10:
                 minimum = dis
                 closestPoint = (b, a)
     posDistance = distance(closestPoint[0], closestPoint[1], center[0], center[1])
@@ -185,7 +185,9 @@ def startAnalysis(values = None):
             methodOfAnalysis = method
         def Mousecoords(event):
             global methodOfAnalysis
-            pointxy = (int(event.x * 144 / 400), int(event.y * 144 / 400)) # get the mouse position from event
+            s = PixelatedSTEM(file.inav[0, 0])
+            length = len(array(s))
+            pointxy = (int(event.x * length / 400), int(event.y * length / 400)) # get the mouse position from event
             l['text'] = l['text'] + str(pointxy[0]) + " " + str(pointxy[1]) + "\n"
             l['text'] = l['text'] + "Starting analysis...\n"
             r.update()
