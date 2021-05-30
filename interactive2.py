@@ -89,36 +89,6 @@ def intensity(values):
     imarray = array(s)
     singleValues[values[1]][values[0]] = imarray[values[3]][values[2]]
 
-def duplicates(list, result):
-    i = 0
-    l = []
-    while i < len(list):
-        j = 0
-        temp = []
-        point = list[i]
-        while j < len(list):
-            if distance(point[0], point[1], list[j][0], list[j][1]) < 15:# change minimum center distance
-                temp.append(list[j])
-                list.pop(j)
-            else:
-                j = j + 1
-        max = 0
-        pnt = temp[0]
-        for j in range(len(temp)):
-            if (result[pnt[0]][pnt[1]] < result[temp[j][0]][temp[j][1]]):
-                max = result[temp[j][0]][temp[j][1]]
-                pnt = temp[j]
-        l.append(pnt)
-    return l
-
-def correlation(result):
-    l = []
-    for i in range(len(result)):
-        for j in range(len(result[i])):
-            if (result[i][j] > 0.87):#change correlation value
-                l.append((i, j))
-    return l
-
 def findCenter(im, peak):
     center = (0,0)
     minimum = 144
@@ -134,28 +104,64 @@ def findCenter(im, peak):
 def multiprocessing_func(values):
     global singleValues, distances
     s = PixelatedSTEM(file.inav[values[0], values[1]])
+    
     original = array(s)
-
-    sigma_est = mean(estimate_sigma(original, ))
-    # patch_size for 580 - 1, patch_size for 144 = 3
-    nlm = denoise_nl_means(original, h=1.15*sigma_est, fast_mode=True, patch_size=3, patch_distance=6, )
-    gaussian = gaussian_filter(original, 1.15*sigma_est)
-    wien = wiener(original, 5, 3)
-
-    original = nlm # Change this to whatever filter you want to use
-
-    # PIXSTEM
-    s = s.rotate_diffraction(0,show_progressbar=False)
     ############################################################################################################################
-    st = s.template_match_disk(disk_r=5, lazy_result=False, show_progressbar=False)
-    peak_array = st.find_peaks(lazy_result=False, show_progressbar=False)
-    peak_array_com = s.peak_position_refinement_com(peak_array, lazy_result=False, show_progressbar=False)
-    s_rem = s.subtract_diffraction_background(lazy_result=False, show_progressbar=False)
-    peak_array_rem_com = s_rem.peak_position_refinement_com(peak_array_com, lazy_result=False, show_progressbar=False)
+    # # FILTERS
+
+    # sigma_est = mean(estimate_sigma(original, ))
+    # # patch_size for 580 - 1, patch_size for 144 = 3
+    # nlm = denoise_nl_means(original, h=1.15*sigma_est, fast_mode=True, patch_size=3, patch_distance=6, )
+    # gaussian = gaussian_filter(original, 1.15*sigma_est)
+    # wien = wiener(original, 5, 3)
+
+    # s = PixelatedSTEM(gaussian) # Change this to whatever filter you want to use
+    ############################################################################################################################
+    # # PIXSTEM
+
+    # s = s.rotate_diffraction(0,show_progressbar=False)
+    # st = s.template_match_disk(disk_r=5, lazy_result=False, show_progressbar=False)
+    # peak_array = st.find_peaks(lazy_result=False, show_progressbar=False)
+    # peak_array_com = s.peak_position_refinement_com(peak_array, lazy_result=False, show_progressbar=False)
+    # s_rem = s.subtract_diffraction_background(lazy_result=False, show_progressbar=False)
+    # peak_array_rem_com = s_rem.peak_position_refinement_com(peak_array_com, lazy_result=False, show_progressbar=False)
+    ############################################################################################################################
+    # MY METHOD
+
+    # defines template and templates matches 
+    # spot for 580 - [265:320, 265:320]
+    # spot for 144 - [65:80, 65:80]
+    template = original[65:80, 65:80]
+    result = match_template(original, template, pad_input=True)
+    # only takes points greater than the threshold r-value
+    tempList = []
+    for i in range(len(result)):
+        for j in range(len(result[i])):
+            if (result[i][j] > 0.87): # change correlation value
+                tempList.append((i, j))
+    # removes duplicate spots that are too close to each other
+    i = 0
+    l = []
+    while i < len(tempList):
+        j = 0
+        temp = []
+        point = tempList[i]
+        while j < len(tempList):
+            if distance(point[0], point[1], tempList[j][0], tempList[j][1]) < 15: # change minimum center distance
+                temp.append(tempList[j])
+                tempList.pop(j)
+            else:
+                j = j + 1
+        max = 0
+        pnt = temp[0]
+        for j in range(len(temp)):
+            if (result[pnt[0]][pnt[1]] < result[temp[j][0]][temp[j][1]]):
+                max = result[temp[j][0]][temp[j][1]]
+                pnt = temp[j]
+        l.append(pnt)
+    peak_array_rem_com = [[], l]
     ############################################################################################################################
     center = findCenter(original, peak_array_rem_com)
-
-
     # finds the specific spot and adding that distance to the array
     posDistance = 0
     closestPoint = center
@@ -174,6 +180,7 @@ def multiprocessing_func(values):
                 closestPoint = (b, a)
     posDistance = distance(closestPoint[0], closestPoint[1], center[0], center[1])
     singleValues[values[1]][values[0]] = round(posDistance, 2)
+    print(values[0], values[1], closestPoint, posDistance, center)
 
 def startAnalysis(values = None):
     global file, currFunc
@@ -269,7 +276,7 @@ def heatMapMaker(minimum, maximum, parity = 0):
         data = singleValues.copy()
         df = DataFrame(data, columns=arange(len(data[0])), index=arange(len(data)))
         _, a = plt.subplots(figsize=(6,5.5))
-        chart1 = heatmap(df, cmap=cm.get_cmap("gray"),ax=a, vmin = minimum, vmax = maximum, square=True)
+        chart1 = heatmap(df, cmap=cm.get_cmap("rainbow"),ax=a, vmin = minimum, vmax = maximum, square=True)
         return chart1.get_figure()
     else:
         data = zeros((len(singleValues), len(singleValues[0])), dtype=float)
@@ -304,35 +311,14 @@ def barChart(INTERVAL = 0.1):
     else:
         label1['text'] = label1['text'] + "Creating bar chart. This might take several minutes depending on the size of data.\n"
         root.update()
-        dist = distances.copy()
-        dist = around(dist.flatten(), 1)
-        x_pos = arange(min(dist[nonzero(dist)]), max(dist), INTERVAL) # this 0.01 is the distance between each x-axis label. So for example it goes 1.0, 1.01, 1.02, 1.03...
-        x_pos = [round(num, 1) for num in x_pos]
-        y_pos = arange(len(x_pos))
-        ################################################################################################################################
-        from collections import Counter
-        counter = Counter(dist)
-        counts = []
-        for i in x_pos:
-            counts.append(counter[i]) if i in counter.keys() else counts.append(0)
-        ################################################################################################################################
-        fig, a = plt.subplots(figsize=(6,5.5))
-        plt.xticks(y_pos, x_pos, fontsize = 8)
+        dist = singleValues.flatten()
+
+        
         plt.xlabel('Distance from center peek', fontsize = 10)
         plt.ylabel('Counts', fontsize = 10)
         plt.title('Distance Counts', fontsize = 10)
-        plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
-
-        axs = plt.gca()
-        plt.setp(axs.get_xticklabels(), rotation=90)
-        axs.tick_params(axis='x', which='major', labelsize=10)
-        axs.tick_params(axis='y', which='major', labelsize=10)
-        #[l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % (ceil((len(distances[0]) * len(distances) * 20) / 100) * 2) != 0]
-        if len(axs.xaxis.get_ticklabels()) > 40:
-            [l.set_visible(False) for (i,l) in enumerate(axs.xaxis.get_ticklabels()) if i % int(len(distances[0]) * len(distances) * 20 / 40) != 0]
-
-        plt.gcf().subplots_adjust(bottom = 0.23)
-        plt.rcParams["figure.dpi"] = 100
+        #plt.bar(y_pos, counts, align='center', alpha=0.95) # creates the bar plot
+        plt.hist(dist, bins=500)
 
         def scopeHeatMap(event):
             values = e.get().split(" ")
