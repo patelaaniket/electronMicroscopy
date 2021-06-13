@@ -161,78 +161,90 @@ def multiprocessing_func(values):
         l.append(pnt)
     peak_array_rem_com = [[], l]
     ############################################################################################################################
-    center = findCenter(original, peak_array_rem_com)
-    # finds the specific spot and adding that distance to the array
-    posDistance = 0
-    closestPoint = center
-    idx = 0
+
+    closestPoint = None
+    closestPoint1 = None
     length = len(original)
     for (x,y) in ndenumerate(peak_array_rem_com):
         minimum = 999999
+        minimum1 = 999999
         for (a, b) in y:
-            if (2 < b < length - 2 and 2 < a < length - 2):
-                di = distance(center[0], center[1], b, a)
-                distances[values[1]][values[0]][idx] = round(di, 3)
-                idx += 1
             dis = distance(values[2], values[3], b, a)
+            dis1 = distance(values[4], values[5], b, a)
             if dis < minimum and dis < length / 10:
                 minimum = dis
                 closestPoint = (b, a)
-    posDistance = distance(closestPoint[0], closestPoint[1], center[0], center[1])
+            if dis1 < minimum1 and dis1 < length / 10:
+                minimum1 = dis1
+                closestPoint1 = (b, a)
+    print(closestPoint, closestPoint1, values[4], values[5])
+    posDistance = distance(closestPoint[0], closestPoint[1], closestPoint1[0], closestPoint1[1])
     singleValues[values[1]][values[0]] = round(posDistance, 2)
-    print(values[0], values[1], closestPoint, posDistance, center)
 
 def startAnalysis(values = None):
     global file, currFunc
-    pointxy = None
     methodOfAnalysis = ""
-    if pointxy is None:
-        def assignMethod(method):
-            global methodOfAnalysis
-            methodOfAnalysis = method
-        def Mousecoords(event):
-            global methodOfAnalysis
-            s = PixelatedSTEM(file.inav[0, 0])
-            length = len(array(s))
-            pointxy = (int(event.x * length / 400), int(event.y * length / 400)) # get the mouse position from event
-            l['text'] = l['text'] + str(pointxy[0]) + " " + str(pointxy[1]) + "\n"
-            l['text'] = l['text'] + "Starting analysis...\n"
-            r.update()
-            analysis(pointxy, values, methodOfAnalysis)
-            remove("temp.png")
-            c2.unbind('<Button-1>')
-            r.destroy()
-            label1['text'] = label1['text'] + "Analysis complete.\n"
 
+    def assignMethod(method):
+        global methodOfAnalysis
+        methodOfAnalysis = method
+    def mousecoords(event):
+        global methodOfAnalysis
         s = PixelatedSTEM(file.inav[0, 0])
-        s.save("temp.png")
-        img = Image.open("temp.png")
-        img = img.resize((400,400), Image.ANTIALIAS)
-        img.save('temp.png')
+        length = len(array(s))
+        pointxy = (-1, -1)
+        while pointxy is (-1, -1):
+            pointxy = (int(event.x * length / 400), int(event.y * length / 400)) # get the mouse position from event
+        l['text'] = l['text'] + str(pointxy[0]) + " " + str(pointxy[1]) + "\n"
+        r.update()
+        c2.unbind('<Button-1>')
+        c2.bind('<Button-1>', lambda event : mousecoords1(event,pointxy))
+    def mousecoords1(event, pointxy):
+        global methodOfAnalysis
+        pointxy1 = None
+        s = PixelatedSTEM(file.inav[0, 0])
+        length = len(array(s))
+        while pointxy1 is None:
+            pointxy1 = (int(event.x * length / 400), int(event.y * length / 400)) # get the mouse position from event
+            print("pointxy1", pointxy1, "\n", "pointxy", pointxy)
+        l['text'] = l['text'] + str(pointxy1[0]) + " " + str(pointxy1[1]) + "\n"
+        l['text'] = l['text'] + "Starting analysis...\n"
+        analysis(pointxy, pointxy1, values, methodOfAnalysis)
+        r.update()
+        remove("temp.png")
+        c2.unbind('<Button-1>')
+        r.destroy()
+        label1['text'] = label1['text'] + "Analysis complete.\n"
 
-        r = tk.Toplevel(root)
+    s = PixelatedSTEM(file.inav[0, 0])
+    s.save("temp.png")
+    img = Image.open("temp.png")
+    img = img.resize((400,400), Image.ANTIALIAS)
+    img.save('temp.png')
 
-        c = tk.Canvas(r, height=720, width=1080)
-        c.pack()
-        f = tk.Frame(r, bg='#333333')
-        f.place(relwidth=1, relheight=1)
-        l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1000)
-        l.place(relx=0.05, rely=0.7, relwidth=0.9, relheight=0.2)
-        b1 = tk.Button(f, text='Intensity Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
-        b1.place(relx=0.2, rely=0.6, relwidth=0.2, relheight=0.05)
-        b2 = tk.Button(f, text='Strain Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("strain"), pady=0.02, fg='#ffffff')
-        b2.place(relx=0.6, rely=0.6, relwidth=0.2, relheight=0.05)
-        c2 = tk.Canvas(r, width=400, height=400)
-        c2.place(relx=0.3)
-        img = ImageTk.PhotoImage(Image.open("temp.png"))
-        c2.create_image(0, 0, anchor='nw', image=img)
-        c2.bind('<Button-1>', Mousecoords)
-        l['text'] = l['text'] + "Please click on the method of analysis and then the point you would like to analyze from the diffraction pattern above.\n"
-        r.mainloop()
-        if path.exists("temp.png"):
-            remove("temp.png")
+    r = tk.Toplevel(root)
+
+    c = tk.Canvas(r, height=720, width=1080)
+    c.pack()
+    f = tk.Frame(r, bg='#333333')
+    f.place(relwidth=1, relheight=1)
+    l = tk.Message(f, bg='#999999', font=('Calibri', 15), anchor='nw', justify='left', highlightthickness = 0, bd=0, width = 1000)
+    l.place(relx=0.05, rely=0.7, relwidth=0.9, relheight=0.2)
+    b1 = tk.Button(f, text='Intensity Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("intensity"), pady=0.02, fg='#ffffff')
+    b1.place(relx=0.2, rely=0.6, relwidth=0.2, relheight=0.05)
+    b2 = tk.Button(f, text='Strain Mapping', bg='#620000', font=('Calibri', 15), highlightthickness = 0, bd=0, activebackground='#800000', activeforeground='#ffffff', command=lambda: assignMethod("strain"), pady=0.02, fg='#ffffff')
+    b2.place(relx=0.6, rely=0.6, relwidth=0.2, relheight=0.05)
+    c2 = tk.Canvas(r, width=400, height=400)
+    c2.place(relx=0.3)
+    img = ImageTk.PhotoImage(Image.open("temp.png"))
+    c2.create_image(0, 0, anchor='nw', image=img)
+    c2.bind('<Button-1>', mousecoords)
+    l['text'] = l['text'] + "Please click on the method of analysis and then the point you would like to analyze from the diffraction pattern above.\n"
+    r.mainloop()
+    if path.exists("temp.png"):
+        remove("temp.png")
         
-def analysis(pointxy, values, methodOfAnalysis=""):
+def analysis(pointxy, pointxy1, values, methodOfAnalysis=""):
     global file, singleValues, distances
     t = values.split(" ")
     COL = int(t[1])
@@ -241,7 +253,7 @@ def analysis(pointxy, values, methodOfAnalysis=""):
     list = []
     for r in range(ROW):
         for c in range(COL):
-            list.append((r, c, pointxy[0], pointxy[1]))
+            list.append((r, c, pointxy[0], pointxy[1], pointxy1[0], pointxy1[1]))
 
     shared_array_base = Array(c_double, ROW*COL)
     singleValues = as_array(shared_array_base.get_obj())
@@ -313,7 +325,7 @@ def barChart(INTERVAL = 0.1):
         root.update()
         dist = singleValues.flatten()
 
-        
+        fig, a = plt.subplots(figsize=(6,5.5))
         plt.xlabel('Distance from center peek', fontsize = 10)
         plt.ylabel('Counts', fontsize = 10)
         plt.title('Distance Counts', fontsize = 10)
