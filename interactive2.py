@@ -137,7 +137,7 @@ def multiprocessing_func(values):
     tempList = []
     for i in range(len(result)):
         for j in range(len(result[i])):
-            if (result[i][j] > 0.87): # change correlation value
+            if (result[i][j] > 0.7): # change correlation value
                 tempList.append((i, j))
     # removes duplicate spots that are too close to each other
     i = 0
@@ -216,7 +216,7 @@ def startAnalysis(values = None):
         r.destroy()
         label1['text'] = label1['text'] + "Analysis complete.\n"
 
-    s = PixelatedSTEM(file.inav[0, 0])
+    s = PixelatedSTEM(file.inav[60, 60])
     s.save("temp.png")
     img = Image.open("temp.png")
     img = img.resize((400,400), Image.ANTIALIAS)
